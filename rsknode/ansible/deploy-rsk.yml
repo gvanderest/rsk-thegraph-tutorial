@@ -1,0 +1,68 @@
+---
+- name: DeployRSK Nodes
+  hosts: rsknodes
+  become_user: root
+  become: yes
+  tasks:
+    - name: Install tools
+      become: true
+      shell:
+        cmd: amazon-linux-extras install -y docker
+      register: shell_result
+
+    - name: Download RSK snapshot
+      get_url:
+        url: https://rsk-db-snapshots.s3.eu-central-1.amazonaws.com/{{ rsk_network }}/1.0.0/{{ snapshot }}.tgz
+        dest: /tmp/database_file.tgz
+      async: 7200
+      poll: 10
+
+    - name: Create database directory
+      file:
+        state: directory
+        path: /var/lib/rsk/database/testnet
+    - name: Check RSK snapshot has been extracted
+      stat:
+        path: /var/lib/rsk/database
+      register: rsk_extracted
+    - name: Extract RSK snapshot
+      when: not rsk_extracted.stat.exists
+      shell: "cd /tmp && tar -xkvf database_file.tgz -C /var/lib/rsk/ && chown -R ec2-user:ec2-user /var/lib/rsk/"
+
+    - name: Create RSK configuration path on instance
+      file:
+        state: directory
+        path: /etc/rsk
+    - name: Copy RSK configuration file
+      copy:
+        src: "{{playbook_dir}}/../node-testnet.conf"
+        dest: /etc/rsk/node.conf
+    - name: Configure DNS Hosts in RSK
+      lineinfile:
+        dest: /etc/rsk/node.conf
+        regexp: "^(.*)hosts(.*)$"
+        line: 'hosts = ["localhost", "127.0.0.1", {{ rsk_dns_names | split(",") | map("to_json") | join(", ") }}, "{{ ansible_ssh_host }}"],'
+        backrefs: yes
+
+    - name: Add ec2-user to docker group
+      shell:
+        cmd: usermod -a -G docker ec2-user
+
+    - name: Get Docker server started
+      service:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Login to docker repo
+      shell: AWS_ACCESS_KEY_ID={{aws_access_key_id}} AWS_SECRET_ACCESS_KEY={{aws_secret_access_key}} aws ecr get-login-password --region {{aws_region}} | docker login --username AWS --password-stdin {{ecr_host}}
+    - name: Kill previous RSK node
+      shell: docker kill rsk-node
+      ignore_errors: yes
+    - name: Delete previous RSK node
+      shell: docker container rm rsk-node
+      ignore_errors: yes
+    - name: Start RSK Node
+      shell: docker run -d --pull always -p 4444:4444 -p 50505:50505 --name rsk-node --volume /var/lib/rsk:/var/lib/rsk --volume /etc/rsk:/etc/rsk {{ecr_host}}/rsk-testnet:latest
+# TODO:
+
