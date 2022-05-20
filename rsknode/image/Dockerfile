@@ -9,7 +9,7 @@ RUN apt-get update \
 # JAVA
 RUN (wget -O- https://apt.corretto.aws/corretto.key | apt-key add -) \
     && add-apt-repository 'deb https://apt.corretto.aws stable main' \
-    && apt-get update
+    && apt-get update \
     && apt-get install -y java-11-amazon-corretto-jdk \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -17,7 +17,8 @@ RUN (wget -O- https://apt.corretto.aws/corretto.key | apt-key add -) \
 # RSK
 WORKDIR /root
 RUN wget https://github.com/rsksmart/rskj/releases/download/IRIS-3.3.0/rskj-core-3.3.0-IRIS-all.jar -O rsk.jar
-COPY logback.xml /etc/rsk/logback.xml
+COPY ./node.conf /etc/rsk/node.conf
+COPY ./logback.xml /etc/rsk/logback.xml
 
 EXPOSE 4444
 EXPOSE 4445
